@@ -1,0 +1,25 @@
+# Environnement virtuel — se recree avec requirements.txt, ne se versionne jamais
+.venv/
+venv/
+
+# Caches Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Secrets — mot de passe PostgreSQL, cle d'API. JAMAIS dans git.
+.env
+
+# Tests et rapports de couverture
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Editeurs
+.vscode/
+.idea/
+
+# Systeme
+.DS_Store
+Thumbs.db

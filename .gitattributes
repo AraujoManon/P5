@@ -1,0 +1,9 @@
+# Fins de ligne normalisees : LF dans le depot, quelle que soit la machine.
+# Necessaire car le developpement se fait sous Windows (CRLF) et la CI
+# GitHub Actions tourne sous Linux (LF).
+* text=auto eol=lf
+
+# Binaires : ne jamais toucher aux fins de ligne
+*.joblib binary
+*.png binary
+*.jpg binary

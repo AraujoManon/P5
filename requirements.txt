@@ -1,0 +1,23 @@
+# Dependances de PRODUCTION uniquement.
+# Ce qui doit tourner sur le serveur, rien de plus.
+# Versions epinglees avec == : le meme code installe la meme chose
+# sur ta machine, dans la CI et chez l'evaluateur.
+
+# --- API ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.5
+pydantic-settings==2.7.1
+
+# --- Machine learning ---
+scikit-learn==1.6.1
+pandas==2.2.3
+numpy==2.2.2
+joblib==1.4.2
+
+# --- Base de donnees ---
+sqlalchemy==2.0.37
+psycopg[binary]==3.2.4
+
+# --- Configuration ---
+python-dotenv==1.0.1
