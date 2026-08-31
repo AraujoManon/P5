@@ -11,6 +11,7 @@ pydantic-settings==2.7.1
 
 # --- Machine learning ---
 scikit-learn==1.6.1
+imbalanced-learn==0.13.0  # RandomUnderSampler + Pipeline compatible resampling
 pandas==2.2.3
 numpy==2.2.2
 joblib==1.4.2
