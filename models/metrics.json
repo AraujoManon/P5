@@ -1,0 +1,51 @@
+{
+  "seuil_retenu": 0.4,
+  "graine": 42,
+  "nb_lignes_total": 1470,
+  "nb_lignes_train": 1176,
+  "nb_lignes_test": 294,
+  "taux_depart": 0.1612,
+  "validation_croisee": {
+    "n_plis": 5,
+    "seuil": 0.4,
+    "rappel_moyen": 0.8263,
+    "ecart_type": 0.0634,
+    "par_pli": [
+      0.7632,
+      0.7895,
+      0.8947,
+      0.8947,
+      0.7895
+    ]
+  },
+  "au_seuil_retenu": {
+    "seuil": 0.4,
+    "accuracy": 0.5544,
+    "precision": 0.2342,
+    "recall": 0.7872,
+    "f1": 0.361,
+    "roc_auc": 0.7389,
+    "matrice_confusion": {
+      "vrais_negatifs": 126,
+      "faux_positifs": 121,
+      "faux_negatifs": 10,
+      "vrais_positifs": 37
+    },
+    "departs_detectes": "37/47"
+  },
+  "au_seuil_par_defaut": {
+    "seuil": 0.5,
+    "accuracy": 0.7279,
+    "precision": 0.3366,
+    "recall": 0.7234,
+    "f1": 0.4595,
+    "roc_auc": 0.7389,
+    "matrice_confusion": {
+      "vrais_negatifs": 180,
+      "faux_positifs": 67,
+      "faux_negatifs": 13,
+      "vrais_positifs": 34
+    },
+    "departs_detectes": "34/47"
+  }
+}
