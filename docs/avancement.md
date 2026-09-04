@@ -270,6 +270,32 @@ connaît déjà.
 Couverture après l'étape : **90 %** (`database.py` à 62 %, les branches non
 couvertes sont la création réelle du moteur).
 
+### Authentification ✅
+
+`src/securite.py`. Une clé d'API dans l'en-tête `X-API-Key`, comparée à la
+variable `API_KEY`. `/predict` la réclame, `/health` non : la supervision et
+Hugging Face doivent pouvoir vérifier que le service tourne sans détenir de
+secret.
+
+Pourquoi une clé et pas un JWT : le client est un outil RH, pas un humain qui
+se connecte. Il n'y a pas de notion d'utilisateur dans la base, donc une table
+de comptes et de mots de passe répondrait à un besoin qui n'existe pas. Une clé
+se range dans un coffre à secrets, ce que l'étape CI/CD demande de montrer.
+
+Deux détails qui se défendent à l'oral :
+
+`secrets.compare_digest` au lieu de `==`. Une comparaison normale s'arrête au
+premier caractère faux, donc son temps de réponse dit combien de caractères
+étaient justes. Sur un grand nombre d'essais, ça permet de reconstituer la clé.
+`compare_digest` prend toujours le même temps.
+
+`auto_error=False` sur `APIKeyHeader`. Par défaut FastAPI renvoie un 403 quand
+l'en-tête manque, ce qui veut dire « connu mais interdit ». Ici il n'est pas
+connu du tout : 401.
+
+La clé locale est dans `.env`, jamais versionnée. `.env.example` indique
+comment en générer une.
+
 ---
 
 ## Ce qu'il reste
@@ -299,7 +325,6 @@ sécurité), documentation de l'API, documentation technique du modèle.
 
 ### Transverse
 
-- authentification et sécurisation de l'API
 - tags de version au fil des étapes
 - support de présentation pour la soutenance
 
