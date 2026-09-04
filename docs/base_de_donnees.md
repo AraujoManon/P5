@@ -71,17 +71,23 @@ profil hypothétique saisi par les RH.
 
 ## Choix de modélisation
 
-**Trois tables plutôt qu'une.** Les données viennent de trois extraits
+### Trois tables plutôt qu'une
+
+Les données viennent de trois extraits
 distincts — SIRH, sondage interne, évaluations annuelles. Les recoller en une
 table large aurait effacé cette origine. Chaque table garde la clé primaire de
 son système source.
 
-**`eval_number` en texte.** Le système d'évaluation numérote `E_1`, `E_2`,
+### `eval_number` en texte
+
+Le système d'évaluation numérote `E_1`, `E_2`,
 `E_4`. C'est `"E_" + id_employee`, vérifié sur les 1470 lignes. La table garde
 l'identifiant tel qu'il arrive et porte en plus `id_employee`, qui supporte la
 clé étrangère.
 
-**Les entrées de prédiction en JSONB.** Les 26 champs sont déjà décrits une
+### Les entrées de prédiction en JSONB
+
+Les 26 champs sont déjà décrits une
 fois dans `src/schemas.py`. Les redéclarer en colonnes SQL ferait deux endroits
 à modifier à chaque évolution du contrat. Le JSONB reste interrogeable :
 
@@ -91,12 +97,15 @@ FROM predictions
 GROUP BY 1;
 ```
 
-**`augementation_salaire_precedente` en `numeric`.** Le CSV contient `"11 %"`.
+### `augementation_salaire_precedente` en `numeric`
+
+Le CSV contient `"11 %"`.
 La valeur est nettoyée à l'insertion : un pourcentage est un nombre, et toute
 requête qui en fait une moyenne devrait sinon le renettoyer.
 
-**Pas de `CHECK` sur les colonnes catégorielles du jeu de données.** Les
-modalités autorisées vivent dans `src/schemas.py`. En revanche `predictions`
+### Pas de `CHECK` sur les colonnes catégorielles
+
+Les modalités autorisées vivent dans `src/schemas.py`. En revanche `predictions`
 en a deux, sur `probabilite` et `prediction` : ce sont des sorties du code, et
 une valeur aberrante y signalerait un bug à corriger tout de suite.
 
