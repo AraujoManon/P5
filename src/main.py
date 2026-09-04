@@ -1,10 +1,12 @@
 """Point d'entrée de l'API."""
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import joblib
 import pandas as pd
+import uvicorn
 from fastapi import Depends, FastAPI
 from sqlalchemy.orm import Session
 
@@ -60,3 +62,8 @@ def predict(employe: EmployeEntree, session: Session = Depends(get_session)):
     # Pas de try/except : une prediction non tracee doit echouer, pas passer.
     enregistrer_prediction(session, employe.model_dump(), sortie, VERSION)
     return sortie
+
+
+def demarrer():
+    """Point d'entree `attrition-api`. PORT est impose par l'hebergeur."""
+    uvicorn.run("src.main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
