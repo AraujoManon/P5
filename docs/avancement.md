@@ -212,17 +212,67 @@ change par rapport au cas qui passe, donc la 422 ne peut venir que de là.
 `schemas.py` à 100 %, `pipeline.py` à 75 % — les lignes non couvertes sont
 celles de `construire_pipeline()`, appelée à l'entraînement et pas par l'API.
 
+### Étape 5 — PostgreSQL ✅
+
+Le détail du schéma et les choix de modélisation sont dans
+[`base_de_donnees.md`](base_de_donnees.md). Ici, ce que l'étape a appris.
+
+Quatre tables : `employes_sirh`, `employes_sondage`, `employes_eval` pour le
+jeu de données, `predictions` pour la traçabilité. Trois tables plutôt qu'une
+parce que les données viennent de trois extraits distincts, et que l'UML doit
+montrer cette réalité.
+
+`src/database.py` porte la requête d'insertion, `get_session()` et
+`enregistrer_prediction()`. La route reçoit sa session par `Depends`, donc
+FastAPI l'ouvre et la referme, y compris si la route plante.
+
+**Le moteur n'est créé qu'à la première requête**, pas à l'import du module.
+C'est ce qui permet à pytest de tourner sans PostgreSQL : les tests remplacent
+`get_session` par une `SessionFactice` via `app.dependency_overrides`. Sans ce
+choix, la CI de l'étape 7 aurait besoin d'une base juste pour lancer 10 tests.
+
+Pas de `try/except` autour de l'enregistrement. Une prédiction renvoyée sans
+avoir été tracée casse en silence la promesse « tout passe par la base ».
+Mieux vaut une erreur visible.
+
+**Deux pièges rencontrés.**
+
+Le `%` du commentaire `"11 %"` dans `schema.sql` faisait planter psycopg :
+`only '%s', '%b', '%t' are allowed as placeholders`. Le pilote lit le `%`
+comme un paramètre de requête, même à l'intérieur d'un commentaire.
+Commentaire reformulé sans le symbole.
+
+`eval_number` n'est pas un entier mais `E_1`, `E_2`, `E_4`. C'est
+`"E_" + id_employee`, vérifié sur les 1470 lignes. La table garde
+`eval_number` en texte et porte en plus `id_employee` pour la clé étrangère.
+La déclaration en `integer` venait d'une supposition, pas d'une lecture des
+données — le genre d'erreur qu'un simple coup d'œil au CSV évite.
+
+**Vérifications**
+
+```
+employes_sirh 1470 | employes_sondage 1470 | employes_eval 1470
+jointure des 3 tables : 1470 lignes, aucun employe perdu
+taux de depart : 16,1 %   (le chiffre de l'enonce)
+```
+
+Un appel réel à `/predict` écrit bien sa ligne, relisible en SQL :
+
+```
+id 1 | 2026-09-04 10:07+02 | 0.8300 | Oui | 0.40 | 0.1.0
+```
+
+`scripts/scorer_base.py` fait tourner le modèle sur les 1470 employés depuis
+la base : 738 signalés à risque. Attention à ne pas lire ce chiffre comme une
+performance — ces employés étaient dans le jeu d'entraînement, le modèle les
+connaît déjà.
+
+Couverture après l'étape : **90 %** (`database.py` à 62 %, les branches non
+couvertes sont la création réelle du moteur).
+
 ---
 
 ## Ce qu'il reste
-
-### Étape 5 — PostgreSQL
-
-Schéma des tables, script de création (`.sql` ou `create_db.py`), insertion du
-dataset complet, enregistrement systématique des entrées et sorties du modèle.
-Un schéma UML de la base. Des scripts pour interroger les données.
-
-PostgreSQL 17 est déjà installé sur la machine.
 
 ### Étape 6 — tests
 
