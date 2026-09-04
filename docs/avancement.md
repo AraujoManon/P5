@@ -76,7 +76,9 @@ Vérifié sur les 1470 lignes : 26 + 7 écartées + 1 cible = 34 colonnes CSV,
 modalités conformes, aucun NaN, pas de division par zéro, fonctionne aussi bien
 sur 1 ligne que sur le fichier entier.
 
-### Étape 2 — pipeline et entraînement ⏳ pas encore commité
+### Étape 2 — pipeline et entraînement ✅
+
+Commits `ae79d03` et `667e0f5`
 
 `src/pipeline.py` — 4 étapes :
 
@@ -111,21 +113,108 @@ jeu de test. La validation croisée (0.83 ± 0.06) recouvre le chiffre du P4.
 normal, et c'est pour ça qu'on ne la regarde pas. Un modèle qui répondrait
 « personne ne part » obtiendrait 84 % d'accuracy en ne servant à rien.
 
+### Étape 3 — schémas Pydantic ✅
+
+Commit `f9f3175`, fusionné dans `main` par `5074cc5`
+
+`src/schemas.py` définit le contrat de l'API :
+
+- `EmployeEntree` — les 26 champs, dans l'ordre de `COLONNES_ENTREE`.
+  19 numériques bornés par l'helper `borne()`, qui lit `BORNES` dans
+  `features.py` plutôt que de redéclarer les mêmes valeurs ici.
+  7 champs texte en `Literal`, dont les modalités sont recopiées à la main.
+- `PredictionSortie` — `probabilite_demission`, `prediction` en Oui/Non,
+  et `seuil_applique`.
+
+`extra="forbid"` : un champ inconnu est refusé au lieu d'être ignoré. Sans ça,
+`"agee": 41` passerait sans bruit et `age` manquerait plus loin, avec une
+erreur bien moins lisible.
+
+Le seuil est renvoyé avec la réponse. Il vaut 0.40, pas 0.50 : sans lui, une
+probabilité de 0.45 associée à « Oui » ressemble à un bug.
+
+Un exemple d'employé (le salarié n°1 des CSV, un vrai départ) est déclaré dans
+`json_schema_extra`. Il remplit le formulaire « Try it out » de Swagger.
+
+**Décision** : les modalités sont écrites deux fois, dans `features.py` et dans
+`schemas.py`. Un `Literal` est lu à la construction de la classe, donc le
+construire depuis `MODALITES` donnerait un fichier illisible et une doc Swagger
+qu'on ne peut plus relire. On garde la recopie, et un test la surveille.
+
+### Étape 3 bis — premiers tests ✅
+
+Même commit. `tests/test_schemas.py`, 6 tests :
+
+| | Vérifie que… |
+|---|---|
+| 1 | les 26 champs déclarés sont exactement `COLONNES_ENTREE` |
+| 2 | les 7 `Literal` correspondent à `MODALITES` — c'est le garde-fou de la recopie |
+| 3 | l'exemple de la doc Swagger est valide |
+| 4 | trois entrées fautives sont refusées : hors borne, modalité inconnue, champ en trop |
+
+Le test 4 est écrit avec `@pytest.mark.parametrize`, donc les trois cas
+apparaissent séparément dans le rapport.
+
+### Étape 4 — API FastAPI ✅
+
+`src/main.py` expose deux routes.
+
+`GET /health` renvoie `{"statut": "ok", "modele_charge": true}`. Le second
+champ teste la présence réelle du pipeline en mémoire : une route qui
+répondrait « ok » en dur dirait que tout va bien même avec un `.joblib`
+manquant au déploiement.
+
+`POST /predict` prend un `EmployeEntree`, le convertit en DataFrame d'une
+ligne, appelle `predict_proba` et compare au seuil.
+
+Le modèle est chargé une seule fois, au démarrage, par le `lifespan` de
+FastAPI. Le charger dans la route relirait 1,2 Mo depuis le disque à chaque
+requête.
+
+Trois détails qui comptent :
+
+- `pd.DataFrame([employe.model_dump()])` — les crochets font une liste d'une
+  ligne, donc un tableau 1 × 26. Sans eux, le dictionnaire donnerait un
+  tableau d'une seule colonne.
+- `[0, 1]` sur la sortie de `predict_proba` : première ligne, colonne de la
+  classe 1. La cible étant encodée en 0/1 par `MAPPING_CIBLE`, la classe 1
+  est bien « est parti ». C'est le même indice que dans `train_model.py`.
+- `float(...)` explicite : `predict_proba` renvoie un `numpy.float64`, qui se
+  sérialise mal en JSON selon les versions.
+
+`SEUIL_DECISION` est importé de `pipeline.py`, pas réécrit ici. Le seuil
+existe à un seul endroit dans tout le projet.
+
+### Étape 4 bis — tests des routes ✅
+
+`tests/test_api.py`, 3 tests, écrits dans le même commit que les routes.
+
+| | Vérifie que… |
+|---|---|
+| 1 | `/health` répond 200 et que le modèle est bien chargé |
+| 2 | `/predict` répond 200, probabilité dans [0, 1], décision cohérente avec le seuil |
+| 3 | un champ inconnu donne une 422 |
+
+`with TestClient(app) as client` : le `with` n'est pas décoratif, c'est lui
+qui déclenche le `lifespan`, donc le chargement du modèle. Sans lui, `modele`
+reste vide et le test échoue alors que le code est bon.
+
+Le test 2 ne compare à aucune valeur en dur. La probabilité de l'exemple vaut
+0.83 aujourd'hui, mais elle bougera au prochain réentraînement : un test qui
+exigerait ce chiffre casserait sans qu'il y ait de bug, et un test qui casse
+sans raison finit par être ignoré. Il vérifie donc les propriétés vraies quel
+que soit le modèle.
+
+Le test 3 envoie l'exemple valide **plus** un champ `agee`. Une seule chose
+change par rapport au cas qui passe, donc la 422 ne peut venir que de là.
+
+**Couverture** : 94 % sur `src/` (`pytest --cov=src`). `main.py` et
+`schemas.py` à 100 %, `pipeline.py` à 75 % — les lignes non couvertes sont
+celles de `construire_pipeline()`, appelée à l'entraînement et pas par l'API.
+
 ---
 
 ## Ce qu'il reste
-
-### Étape 3 — schémas Pydantic
-
-`src/schemas.py`. Un modèle Pydantic pour l'entrée (26 champs, bornes et
-modalités importées de `features.py`) et un pour la sortie
-(`probabilite_demission`, `prediction`, `seuil_applique`).
-
-### Étape 4 — API FastAPI
-
-`src/main.py` et les routes. Au minimum `POST /predict` et `GET /health`.
-Documentation Swagger automatique. Chargement du `.joblib` au démarrage, pas à
-chaque requête.
 
 ### Étape 5 — PostgreSQL
 
@@ -137,9 +226,13 @@ PostgreSQL 17 est déjà installé sur la machine.
 
 ### Étape 6 — tests
 
-Tests unitaires et fonctionnels avec pytest, rapport de couverture avec
-pytest-cov. Couvrir les cas critiques et les scénarios d'erreur (modalité
-inconnue, champ manquant, valeur hors bornes).
+Commencé aux étapes 3 et 4 : `test_schemas.py` et `test_api.py`,
+9 tests, 94 % de couverture. Reste à couvrir `features.py` et `pipeline.py`
+directement, et à produire le rapport de couverture en fichier livrable.
+
+Le fichier de test est écrit en même temps que le code qu'il teste, pas dans un
+passage groupé à la fin : le garde-fou des modalités n'aurait aucun sens écrit
+trois semaines après la recopie qu'il surveille.
 
 ### Étape 7 — CI/CD
 
@@ -166,6 +259,22 @@ sécurité), documentation de l'API, documentation technique du modèle.
 
 Une branche par étape, un commit par bloc cohérent, convention
 *Conventional Commits* (`feat:`, `fix:`, `test:`, `docs:`, `chore:`).
+
+Le flux, à chaque étape :
+
+```powershell
+git switch -c feat/nom-de-l-etape
+# ... code, puis ruff, puis pytest
+git commit -m "feat: ..."
+git switch main
+git merge --no-ff feat/nom-de-l-etape
+git branch -d feat/nom-de-l-etape
+git push
+```
+
+`--no-ff` force un commit de fusion. Sans lui, git avance simplement le
+pointeur et la branche ne laisse aucune trace dans le graphe — on perd
+justement ce que le livrable demande de montrer.
 
 Après chaque fichier écrit, vérifier qu'il est bien sur le disque :
 
