@@ -31,8 +31,15 @@ dev = [
     "ruff==0.9.3",
 ]
 
+[project.scripts]
+attrition-api = "src.main:demarrer"
+attrition-entrainer = "scripts.train_model:main"
+attrition-creer-base = "scripts.create_db:main"
+attrition-scorer = "scripts.scorer_base:main"
+attrition-requetes = "scripts.requetes:main"
+
 [tool.setuptools]
-packages = ["src"]
+packages = ["src", "scripts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
