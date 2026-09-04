@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "attrition-api"
+version = "0.3.0"
+description = "API de prediction du risque de demission - TechNova Partners"
+requires-python = ">=3.12"
+
+# Versions epinglees : la meme installation en local, dans la CI et en production.
+dependencies = [
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.34.0",
+    "pydantic==2.10.5",
+    "scikit-learn==1.6.1",
+    "imbalanced-learn==0.13.0",
+    "pandas==2.2.3",
+    "numpy==2.2.2",
+    "joblib==1.4.2",
+    "sqlalchemy==2.0.37",
+    "psycopg[binary]==3.2.4",
+    "python-dotenv==1.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "pytest-cov==6.0.0",
+    "httpx==0.28.1",
+    "ruff==0.9.3",
+]
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88

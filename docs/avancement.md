@@ -54,9 +54,10 @@ models/     le .joblib et les métriques
 
 - `.gitignore` créé **avant** le premier commit (`.venv`, `__pycache__`, `.env`)
 - `.gitattributes` : fins de ligne en LF, pour que la CI Linux soit d'accord
-- `requirements.txt` (production) et `requirements-dev.txt` (tests, ruff)
+- dépendances déclarées dans `pyproject.toml` : `dependencies` pour la
+  production, `optional-dependencies.dev` pour les tests et ruff
 - versions épinglées avec `==`
-- `.venv` créé, 43 paquets installés
+- `.venv` créé, 43 paquets installés (`pip install -e ".[dev]"`)
 
 **Piège rencontré** : `pip` échouait avec
 `Could not find a suitable TLS CA certificate bundle`. Cause : l'installeur
