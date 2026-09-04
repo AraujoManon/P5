@@ -1,19 +1,36 @@
-"""Tests des routes de l'API.
+"""Tests des routes de l'API, via TestClient (pas de serveur a lancer)."""
 
-Les tests passent par TestClient, qui appelle l'application en memoire :
-pas de serveur a lancer, pas de port a ouvrir, donc ils tournent aussi
-bien en local que dans la CI.
-"""
-
+import pytest
 from fastapi.testclient import TestClient
 
+from src.database import get_session
 from src.main import app
 from src.pipeline import SEUIL_DECISION
 from src.schemas import EmployeEntree
 
-# Relu depuis le schema plutot que recopie ici : si l'exemple de Swagger
-# change, les tests suivent au lieu de tester un employe qui n'existe plus.
+# Relu depuis le schema : si l'exemple change, les tests suivent.
 EXEMPLE = EmployeEntree.model_config["json_schema_extra"]["example"]
+
+
+class SessionFactice:
+    """Tient lieu de session PostgreSQL et retient ce qu'on lui demande d'ecrire."""
+
+    def __init__(self):
+        self.ecritures = []
+
+    def execute(self, requete, parametres):
+        self.ecritures.append(parametres)
+
+    def commit(self):
+        pass
+
+
+@pytest.fixture
+def session():
+    factice = SessionFactice()
+    app.dependency_overrides[get_session] = lambda: factice
+    yield factice
+    app.dependency_overrides.clear()
 
 
 def test_health_repond_et_le_modele_est_charge():
@@ -23,25 +40,30 @@ def test_health_repond_et_le_modele_est_charge():
     assert reponse.json()["modele_charge"] is True
 
 
-def test_predict_renvoie_une_prediction_coherente():
+def test_predict_renvoie_une_prediction_coherente(session):
     with TestClient(app) as client:
         reponse = client.post("/predict", json=EXEMPLE)
     assert reponse.status_code == 200
     corps = reponse.json()
     # Pas de valeur en dur : la probabilite bouge a chaque reentrainement.
-    # On verifie ce qui reste vrai quel que soit le modele.
     assert 0 <= corps["probabilite_demission"] <= 1
     attendu = "Oui" if corps["probabilite_demission"] >= SEUIL_DECISION else "Non"
     assert corps["prediction"] == attendu
 
 
-def test_predict_refuse_un_champ_inconnu():
-    """Verifie que Pydantic est bien branche sur la route.
+def test_predict_enregistre_l_appel(session):
+    with TestClient(app) as client:
+        reponse = client.post("/predict", json=EXEMPLE)
+    assert len(session.ecritures) == 1
+    ligne = session.ecritures[0]
+    assert ligne["prediction"] == reponse.json()["prediction"]
+    assert ligne["version"] == app.version
+    assert '"age": 41' in ligne["entree"]
 
-    Pendant de extra="forbid" cote schema : une faute de frappe doit
-    donner une 422 explicite, pas une prediction calculee sur un champ
-    manquant.
-    """
+
+def test_predict_refuse_un_champ_inconnu(session):
+    """Pendant de extra="forbid" : une faute de frappe donne une 422."""
     with TestClient(app) as client:
         reponse = client.post("/predict", json={**EXEMPLE, "agee": 41})
     assert reponse.status_code == 422
+    assert session.ecritures == []
