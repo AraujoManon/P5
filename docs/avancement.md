@@ -56,6 +56,9 @@ models/     le .joblib et les métriques
 - `.gitattributes` : fins de ligne en LF, pour que la CI Linux soit d'accord
 - dépendances déclarées dans `pyproject.toml` : `dependencies` pour la
   production, `optional-dependencies.dev` pour les tests et ruff
+- `[project.scripts]` installe cinq commandes (`attrition-api`,
+  `attrition-creer-base`…) : l'hébergeur lance `attrition-api`, il n'a pas
+  à connaître l'arborescence du dépôt
 - versions épinglées avec `==`
 - `.venv` créé, 43 paquets installés (`pip install -e ".[dev]"`)
 
