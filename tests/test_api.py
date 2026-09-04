@@ -10,6 +10,7 @@ from src.schemas import EmployeEntree
 
 # Relu depuis le schema : si l'exemple change, les tests suivent.
 EXEMPLE = EmployeEntree.model_config["json_schema_extra"]["example"]
+CLE = "cle-de-test"
 
 
 class SessionFactice:
@@ -26,6 +27,12 @@ class SessionFactice:
 
 
 @pytest.fixture
+def entetes(monkeypatch):
+    monkeypatch.setenv("API_KEY", CLE)
+    return {"X-API-Key": CLE}
+
+
+@pytest.fixture
 def session():
     factice = SessionFactice()
     app.dependency_overrides[get_session] = lambda: factice
@@ -33,16 +40,30 @@ def session():
     app.dependency_overrides.clear()
 
 
-def test_health_repond_et_le_modele_est_charge():
+def test_health_ne_demande_pas_de_cle():
+    """La supervision doit pouvoir interroger le service sans secret."""
     with TestClient(app) as client:
         reponse = client.get("/health")
     assert reponse.status_code == 200
     assert reponse.json()["modele_charge"] is True
 
 
-def test_predict_renvoie_une_prediction_coherente(session):
+@pytest.mark.parametrize(
+    "entetes_envoyes",
+    [{}, {"X-API-Key": "mauvaise-cle"}],
+    ids=["sans cle", "cle fausse"],
+)
+def test_predict_refuse_sans_bonne_cle(session, monkeypatch, entetes_envoyes):
+    monkeypatch.setenv("API_KEY", CLE)
     with TestClient(app) as client:
-        reponse = client.post("/predict", json=EXEMPLE)
+        reponse = client.post("/predict", json=EXEMPLE, headers=entetes_envoyes)
+    assert reponse.status_code == 401
+    assert session.ecritures == []
+
+
+def test_predict_renvoie_une_prediction_coherente(session, entetes):
+    with TestClient(app) as client:
+        reponse = client.post("/predict", json=EXEMPLE, headers=entetes)
     assert reponse.status_code == 200
     corps = reponse.json()
     # Pas de valeur en dur : la probabilite bouge a chaque reentrainement.
@@ -51,9 +72,9 @@ def test_predict_renvoie_une_prediction_coherente(session):
     assert corps["prediction"] == attendu
 
 
-def test_predict_enregistre_l_appel(session):
+def test_predict_enregistre_l_appel(session, entetes):
     with TestClient(app) as client:
-        reponse = client.post("/predict", json=EXEMPLE)
+        reponse = client.post("/predict", json=EXEMPLE, headers=entetes)
     assert len(session.ecritures) == 1
     ligne = session.ecritures[0]
     assert ligne["prediction"] == reponse.json()["prediction"]
@@ -61,9 +82,9 @@ def test_predict_enregistre_l_appel(session):
     assert '"age": 41' in ligne["entree"]
 
 
-def test_predict_refuse_un_champ_inconnu(session):
+def test_predict_refuse_un_champ_inconnu(session, entetes):
     """Pendant de extra="forbid" : une faute de frappe donne une 422."""
     with TestClient(app) as client:
-        reponse = client.post("/predict", json={**EXEMPLE, "agee": 41})
+        reponse = client.post("/predict", json={**EXEMPLE, "agee": 41}, headers=entetes)
     assert reponse.status_code == 422
     assert session.ecritures == []

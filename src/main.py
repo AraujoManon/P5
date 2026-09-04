@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from src.database import enregistrer_prediction, get_session
 from src.pipeline import SEUIL_DECISION
+from src.securite import verifier_cle
 from src.schemas import EmployeEntree, PredictionSortie
 
 VERSION = "0.1.0"
@@ -43,7 +44,11 @@ def health():
     return {"statut": "ok", "modele_charge": "pipeline" in modele}
 
 
-@app.post("/predict", response_model=PredictionSortie)
+@app.post(
+    "/predict",
+    response_model=PredictionSortie,
+    dependencies=[Depends(verifier_cle)],
+)
 def predict(employe: EmployeEntree, session: Session = Depends(get_session)):
     """Estime le risque de depart d'un salarie et trace l'appel en base."""
     donnees = pd.DataFrame([employe.model_dump()])
