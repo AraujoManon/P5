@@ -190,8 +190,21 @@ de passe n'apparaît dans les journaux ni dans la table des prédictions.
 pytest
 ```
 
-51 tests, 100 % de couverture sur `src/`. La couverture est activée par défaut
+63 tests, 100 % de couverture sur `src/`. La couverture est activée par défaut
 dans `pyproject.toml`, il n'y a rien à ajouter à la commande.
+
+Douze d'entre eux parlent à un vrai PostgreSQL : ils vérifient qu'une
+prédiction s'insère et se relit, qu'elle se supprime, et que le schéma refuse
+ce qu'il doit refuser — probabilité hors bornes, décision hors vocabulaire,
+colonne obligatoire absente, clé étrangère orpheline, âge en toutes lettres,
+identifiant de compte en double. Ils sont sautés si `DATABASE_TEST_URL` est
+absente, et la CI fournit cette base. Ne jamais y mettre la base de travail :
+le schéma commence par des `DROP`.
+
+```powershell
+createdb attrition_test   # une fois, ou via pgAdmin
+pytest tests/test_integration_bdd.py
+```
 
 Pour le rapport détaillé en HTML :
 
@@ -245,7 +258,7 @@ Elles sont déclarées dans `pyproject.toml` et installées avec le paquet.
 ```
 src/          le service : contrat de données, pipeline, sécurité, API
 scripts/      les commandes hors service : création de base, entraînement
-tests/        51 tests, un fichier par module testé
+tests/        63 tests, un fichier par module testé
 data/         les trois extraits CSV fournis
 models/       le modèle entraîné et ses métriques
 sql/          le schéma de la base
