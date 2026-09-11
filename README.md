@@ -184,6 +184,86 @@ interdit ». Ici on ne sait rien du demandeur.
 par git en développement, les secrets de la plateforme en production. Aucun mot
 de passe n'apparaît dans les journaux ni dans la table des prédictions.
 
+## Traitement et stockage des données
+
+Le cycle de vie d'une donnée, de son arrivée à son exploitation.
+
+| Étape | Ce qui se passe | Où ça vit |
+|---|---|---|
+| Collecte | trois extraits CSV : SIRH, sondage interne, évaluations | `data/` |
+| Chargement | `attrition-creer-base` rejoue le schéma et insère les trois fichiers | PostgreSQL, 3 tables |
+| Préparation | nettoyage, encodages, 5 variables calculées | en mémoire, dans le pipeline |
+| Entraînement | `attrition-entrainer` produit le modèle et ses métriques | `models/` |
+| Prédiction | l'API valide, transforme, prédit | en mémoire |
+| Traçabilité | chaque appel est écrit avec son entrée complète | table `predictions` |
+
+Trois principes gouvernent ce découpage.
+
+**La donnée source n'est jamais modifiée.** Les fautes de frappe des CSV
+(`augementation`, `annes`) sont conservées jusque dans les noms de colonnes de
+l'API. Les corriger imposerait une table de correspondance entre le fichier et
+le service, qu'un oubli rendrait fausse en silence.
+
+**La préparation est écrite une seule fois.** Le même code sert à
+l'entraînement sur 1470 lignes et à la prédiction sur une seule. Deux copies
+finiraient par diverger sans que rien ne le signale.
+
+**Rien n'est écrasé.** La table `predictions` ne fait qu'ajouter. Une décision
+prise il y a six mois reste consultable telle qu'elle a été rendue, avec le
+seuil et la version du modèle de l'époque.
+
+### Ce que la base permet côté analyse
+
+Les données sont stockées de façon à rester exploitables par un analyste ou un
+tableau de bord, sans passer par l'API. `attrition-requetes` en donne quatre
+exemples exécutables :
+
+| Question | Ce qu'on en tire |
+|---|---|
+| taux de départ par département | où se concentre le risque |
+| taux de départ selon les heures supplémentaires | le facteur le plus parlant du jeu de données |
+| les cinq derniers appels au modèle | le service est-il utilisé, et par qui |
+| répartition des prédictions | combien de salariés signalés, à quelle probabilité moyenne |
+
+L'entrée est stockée en `jsonb`, donc chaque champ reste interrogeable sans
+être redéclaré en colonne :
+
+```sql
+SELECT entree->>'departement' AS departement,
+       count(*)               AS appels,
+       round(avg(probabilite), 3) AS risque_moyen
+FROM predictions
+GROUP BY 1
+ORDER BY risque_moyen DESC;
+```
+
+Un tableau de bord RH construit là-dessus afficherait le nombre de salariés
+signalés par département, l'évolution du risque moyen dans le temps, et le
+volume d'appels par compte utilisateur. La même table servira à surveiller la
+dérive : comparer la distribution des entrées reçues à celle des données
+d'entraînement, et alerter quand elles s'éloignent.
+
+## Environnements
+
+Trois environnements, une seule et même configuration : des variables
+d'environnement. Rien à changer dans le code pour passer de l'un à l'autre.
+
+| | Développement | Test | Production |
+|---|---|---|---|
+| Base | PostgreSQL local | base jetable `attrition_test` | base hébergée |
+| Variables | fichier `.env` | `DATABASE_TEST_URL`, posée par la CI | secrets de la plateforme |
+| Lancement | `attrition-api` | `pytest` | conteneur Docker |
+| Port | 8000 par défaut | sans objet | imposé par `PORT` |
+| Modèle | `models/attrition_model.joblib` | idem | embarqué dans l'image |
+
+Le fichier `.env` n'existe qu'en développement. Il est lu au démarrage par
+`python-dotenv`, qui ne remplace jamais une variable déjà présente dans
+l'environnement : en production, où il n'y a pas de fichier, ce sont les
+secrets de la plateforme qui s'appliquent, et ils gagnent toujours.
+
+La base de test est délibérément une base à part. Le schéma commence par des
+`DROP` : le faire tourner sur la base de travail l'effacerait.
+
 ## Tests
 
 ```powershell
@@ -221,6 +301,13 @@ start htmlcov/index.html
 `.github/workflows/ci.yml` lance ruff puis la suite de tests à chaque push,
 sur Ubuntu et Python 3.13. Le job échoue si le formatage n'est pas conforme,
 si un test casse, ou si le rappel du modèle livré passe sous 0.75.
+
+Un service `postgres:17` est démarré le temps de l'exécution, pour les tests
+qui vérifient les contraintes du schéma. Le rapport de couverture est publié en
+artefact téléchargeable, y compris quand un test échoue.
+
+Les tags ne déclenchent rien : ils pointent sur un commit qui vient d'être
+testé.
 
 ## Déploiement
 
