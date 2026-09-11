@@ -49,9 +49,10 @@ Copier `.env.example` en `.env` et remplir les trois variables :
 |---|---|
 | `DATABASE_URL` | connexion à la base `attrition`, utilisée par l'API |
 | `DATABASE_ADMIN_URL` | connexion au serveur PostgreSQL, pour créer la base |
-| `API_KEY` | clé attendue dans l'en-tête `X-API-Key` de `/predict` |
+| `API_KEY` | clé de service attendue dans l'en-tête `X-API-Key` |
+| `JWT_SECRET` | clé de signature des jetons d'accès |
 
-Générer une clé :
+Générer une clé ou un secret (la même commande sert aux deux) :
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(32))"
@@ -93,10 +94,23 @@ L'API écoute sur le port 8000, ou sur celui que donne la variable `PORT`.
 
 ## Appeler l'API
 
+Avec la clé de service :
+
 ```powershell
 $corps = Get-Content docs/exemple.json -Raw
 Invoke-RestMethod -Uri http://127.0.0.1:8000/predict -Method Post `
   -Headers @{ "X-API-Key" = $env:API_KEY } `
+  -ContentType "application/json" -Body $corps
+```
+
+Avec un compte utilisateur :
+
+```powershell
+$jeton = (Invoke-RestMethod -Uri http://127.0.0.1:8000/token -Method Post `
+  -Body @{ username = "martine"; password = "..." }).access_token
+
+Invoke-RestMethod -Uri http://127.0.0.1:8000/predict -Method Post `
+  -Headers @{ Authorization = "Bearer $jeton" } `
   -ContentType "application/json" -Body $corps
 ```
 
@@ -113,25 +127,62 @@ Réponse :
 Le détail des routes, des champs attendus et des codes d'erreur est dans
 [`docs/api.md`](docs/api.md).
 
-## Authentification et sécurité
+## Authentification et gestion des accès
 
-`/predict` exige une clé d'API dans l'en-tête `X-API-Key`. `/health` ne
-demande rien : la supervision et l'hébergeur doivent pouvoir vérifier que le
+Deux méthodes, parce qu'il y a deux sortes d'appelants.
+
+**Les comptes utilisateurs**, pour les humains. On envoie son identifiant et
+son mot de passe à `/token`, on reçoit un jeton valable trente minutes, et on
+le présente ensuite dans l'en-tête `Authorization: Bearer <jeton>`. Créer un
+compte, ou changer son mot de passe :
+
+```powershell
+attrition-creer-utilisateur martine
+```
+
+Le mot de passe est saisi sans écho, douze caractères minimum, et n'est jamais
+stocké : seul son hachage bcrypt part en base.
+
+**La clé de service**, pour l'outil RH. Un automate n'a pas de mot de passe à
+saisir ni de session à renouveler : il présente son en-tête `X-API-Key`. Faire
+tourner un compte utilisateur dans un programme reviendrait à y écrire un mot
+de passe en dur, ce qui est exactement ce qu'on cherche à éviter.
+
+Dans les deux cas, l'appelant identifié est écrit dans la colonne `appelant`
+de la table `predictions` : on sait qui a demandé quoi. `/health`, lui,
+n'exige rien — la supervision et l'hébergeur doivent pouvoir vérifier que le
 service tourne sans détenir de secret.
 
-Une clé plutôt qu'un JWT parce que le client est un outil RH, pas un humain qui
-se connecte. Il n'existe aucune notion d'utilisateur dans la base : une table
-de comptes et de mots de passe répondrait à un besoin qui n'existe pas.
+### Les bonnes pratiques appliquées
 
-Deux choix de mise en œuvre :
+**Les mots de passe sont hachés, pas chiffrés.** Un chiffrement se déchiffre ;
+un hachage, non. bcrypt tire en plus un sel aléatoire par mot de passe, donc
+deux comptes ayant choisi le même mot de passe ont deux hachages différents, et
+une table de hachages précalculés ne sert à rien. Son coût de calcul est
+volontairement élevé, ce qui rend l'essai systématique de millions de
+combinaisons beaucoup trop lent pour être rentable.
 
-- la comparaison passe par `secrets.compare_digest` et non par `==`. Une
-  comparaison ordinaire s'arrête au premier caractère faux, donc son temps de
-  réponse trahit le nombre de caractères justes ; sur beaucoup d'essais, la clé
-  se reconstitue.
-- une clé absente donne un 401 et non le 403 que FastAPI renvoie par défaut.
-  403 signifie « je sais qui tu es, mais c'est interdit ». Ici on ne sait rien
-  du demandeur.
+**Les échecs d'authentification se ressemblent tous.** Compte inconnu, mot de
+passe faux, compte désactivé : même code, même message. Et quand le compte
+n'existe pas, un hachage leurre est quand même comparé — sans lui, une réponse
+instantanée signalerait que l'identifiant n'existe pas, et il suffirait de
+mesurer le temps de réponse pour dresser la liste des comptes réels.
+
+**La clé d'API est comparée en temps constant.** Une comparaison ordinaire
+s'arrête au premier caractère faux, donc sa durée trahit le nombre de
+caractères justes ; sur un grand nombre d'essais, la clé se reconstitue.
+
+**Les jetons expirent au bout de trente minutes** et sont signés. Un jeton
+intercepté ne vaut pas éternellement, et un jeton fabriqué sans le secret est
+rejeté.
+
+**Un refus donne 401, pas 403.** 403 signifie « je sais qui tu es, mais c'est
+interdit ». Ici on ne sait rien du demandeur.
+
+**Les secrets ne sont pas dans le dépôt.** `API_KEY`, `JWT_SECRET` et
+`DATABASE_URL` sont des variables d'environnement : un fichier `.env` ignoré
+par git en développement, les secrets de la plateforme en production. Aucun mot
+de passe n'apparaît dans les journaux ni dans la table des prédictions.
 
 ## Tests
 
@@ -139,7 +190,7 @@ Deux choix de mise en œuvre :
 pytest
 ```
 
-36 tests, 100 % de couverture sur `src/`. La couverture est activée par défaut
+51 tests, 100 % de couverture sur `src/`. La couverture est activée par défaut
 dans `pyproject.toml`, il n'y a rien à ajouter à la commande.
 
 Pour le rapport détaillé en HTML :
@@ -183,6 +234,7 @@ La plateforme d'hébergement n'est pas encore arrêtée — voir
 | `attrition-api` | démarre l'API |
 | `attrition-entrainer` | entraîne le modèle et écrit les métriques |
 | `attrition-creer-base` | crée la base et charge les CSV |
+| `attrition-creer-utilisateur` | crée un compte d'accès à l'API |
 | `attrition-scorer` | prédit sur tous les employés de la base |
 | `attrition-requetes` | exécute les requêtes d'analyse sur la base |
 
@@ -193,7 +245,7 @@ Elles sont déclarées dans `pyproject.toml` et installées avec le paquet.
 ```
 src/          le service : contrat de données, pipeline, sécurité, API
 scripts/      les commandes hors service : création de base, entraînement
-tests/        36 tests, un fichier par module testé
+tests/        51 tests, un fichier par module testé
 data/         les trois extraits CSV fournis
 models/       le modèle entraîné et ses métriques
 sql/          le schéma de la base
