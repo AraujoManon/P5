@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.database import get_session
-from src.main import app
+from src.main import app, demarrer
 from src.pipeline import SEUIL_DECISION
 from src.schemas import EmployeEntree
 
@@ -88,3 +88,12 @@ def test_predict_refuse_un_champ_inconnu(session, entetes):
         reponse = client.post("/predict", json={**EXEMPLE, "agee": 41}, headers=entetes)
     assert reponse.status_code == 422
     assert session.ecritures == []
+
+
+def test_demarrer_ecoute_le_port_de_l_hebergeur(monkeypatch):
+    """L'hebergeur impose son port par PORT : le coder en dur casse le deploiement."""
+    appel = {}
+    monkeypatch.setenv("PORT", "7860")
+    monkeypatch.setattr("src.main.uvicorn.run", lambda *a, **kw: appel.update(kw))
+    demarrer()
+    assert appel["port"] == 7860
