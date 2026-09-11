@@ -7,6 +7,7 @@ Lit les 3 tables, predit, et ecrit une ligne par employe dans predictions.
 """
 
 import json
+from importlib.metadata import version
 from pathlib import Path
 
 import joblib
@@ -18,7 +19,7 @@ from src.pipeline import SEUIL_DECISION
 
 RACINE = Path(__file__).resolve().parent.parent
 FICHIER_MODELE = RACINE / "models" / "attrition_model.joblib"
-VERSION = "0.1.0"
+VERSION = version("attrition-api")
 
 REQUETE_EMPLOYES = """
     SELECT s.*, so.*, e.*
