@@ -2,6 +2,9 @@ name: CI
 
 on:
   push:
+    # Un tag pointe sur un commit deja teste : sans ce filtre, `git push
+    # --follow-tags` lance deux fois la meme CI.
+    tags-ignore: ['**']
   workflow_dispatch:
 
 jobs:
