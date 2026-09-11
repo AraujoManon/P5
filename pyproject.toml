@@ -43,6 +43,7 @@ packages = ["src", "scripts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--cov=src --cov-report=term-missing"
 
 [tool.ruff]
 line-length = 88
