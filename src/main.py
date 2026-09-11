@@ -9,12 +9,13 @@ import joblib
 import pandas as pd
 import uvicorn
 from fastapi import Depends, FastAPI
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from src.database import enregistrer_prediction, get_session
 from src.pipeline import SEUIL_DECISION
-from src.securite import verifier_cle
-from src.schemas import EmployeEntree, PredictionSortie
+from src.securite import authentifier, creer_jeton, identifier_appelant
+from src.schemas import EmployeEntree, Jeton, PredictionSortie
 
 # Lue depuis pyproject.toml : cette valeur part dans chaque ligne de
 # predictions, elle ne doit pas pouvoir diverger de la version publiee.
@@ -49,12 +50,22 @@ def health():
     return {"statut": "ok", "modele_charge": "pipeline" in modele}
 
 
-@app.post(
-    "/predict",
-    response_model=PredictionSortie,
-    dependencies=[Depends(verifier_cle)],
-)
-def predict(employe: EmployeEntree, session: Session = Depends(get_session)):
+@app.post("/token", response_model=Jeton)
+def token(
+    formulaire: OAuth2PasswordRequestForm = Depends(),
+    session: Session = Depends(get_session),
+):
+    """Echange un identifiant et un mot de passe contre un jeton d'acces."""
+    identifiant = authentifier(session, formulaire.username, formulaire.password)
+    return Jeton(access_token=creer_jeton(identifiant))
+
+
+@app.post("/predict", response_model=PredictionSortie)
+def predict(
+    employe: EmployeEntree,
+    appelant: str = Depends(identifier_appelant),
+    session: Session = Depends(get_session),
+):
     """Estime le risque de depart d'un salarie et trace l'appel en base."""
     donnees = pd.DataFrame([employe.model_dump()])
     probabilite = float(modele["pipeline"].predict_proba(donnees)[0, 1])
@@ -63,7 +74,7 @@ def predict(employe: EmployeEntree, session: Session = Depends(get_session)):
         prediction="Oui" if probabilite >= SEUIL_DECISION else "Non",
     )
     # Pas de try/except : une prediction non tracee doit echouer, pas passer.
-    enregistrer_prediction(session, employe.model_dump(), sortie, VERSION)
+    enregistrer_prediction(session, employe.model_dump(), sortie, VERSION, appelant)
     return sortie
 
 

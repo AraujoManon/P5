@@ -176,3 +176,11 @@ class PredictionSortie(BaseModel):
     seuil_applique: float = Field(
         default=SEUIL_DECISION, description="Seuil de decision applique"
     )
+
+
+class Jeton(BaseModel):
+    """Ce que renvoie /token."""
+
+    access_token: str = Field(description="Jeton d'acces, valable 30 minutes")
+    # Nom impose par OAuth2, que le bouton Authorize de Swagger attend tel quel.
+    token_type: str = Field(default="bearer", description="Type de jeton")

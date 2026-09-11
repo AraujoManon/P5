@@ -2,6 +2,7 @@
 
 -- Ordre inverse des CREATE, a cause des cles etrangeres.
 DROP TABLE IF EXISTS predictions;
+DROP TABLE IF EXISTS utilisateurs;
 DROP TABLE IF EXISTS employes_eval;
 DROP TABLE IF EXISTS employes_sondage;
 DROP TABLE IF EXISTS employes_sirh;
@@ -58,6 +59,16 @@ CREATE TABLE employes_eval (
 );
 
 
+-- Jamais de mot de passe en clair : seul le hachage bcrypt est stocke.
+CREATE TABLE utilisateurs (
+    id                 serial      PRIMARY KEY,
+    identifiant        text        NOT NULL UNIQUE,
+    mot_de_passe_hache text        NOT NULL,
+    actif              boolean     NOT NULL DEFAULT true,
+    cree_le            timestamptz NOT NULL DEFAULT now()
+);
+
+
 CREATE TABLE predictions (
     id             bigserial PRIMARY KEY,
     horodatage     timestamptz   NOT NULL DEFAULT now(),
@@ -65,7 +76,9 @@ CREATE TABLE predictions (
     probabilite    numeric(5, 4) NOT NULL CHECK (probabilite BETWEEN 0 AND 1),
     prediction     text          NOT NULL CHECK (prediction IN ('Oui', 'Non')),
     seuil_applique numeric(3, 2) NOT NULL,
-    version_modele text          NOT NULL
+    version_modele text          NOT NULL,
+    -- 'inconnu' par defaut : les lignes d'avant l'authentification par compte.
+    appelant       text          NOT NULL DEFAULT 'inconnu'
 );
 
 CREATE INDEX idx_predictions_horodatage ON predictions (horodatage DESC);

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "attrition-api"
-version = "0.6.0"
+version = "0.7.0"
 description = "API de prediction du risque de demission - TechNova Partners"
 requires-python = ">=3.12"
 
@@ -21,6 +21,10 @@ dependencies = [
     "sqlalchemy==2.0.37",
     "psycopg[binary]==3.2.4",
     "python-dotenv==1.0.1",
+    "bcrypt==5.0.0",
+    "pyjwt==2.14.0",
+    # Requis par FastAPI pour lire le formulaire OAuth2 de /token.
+    "python-multipart==0.0.32",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +39,7 @@ dev = [
 attrition-api = "src.main:demarrer"
 attrition-entrainer = "scripts.train_model:main"
 attrition-creer-base = "scripts.create_db:main"
+attrition-creer-utilisateur = "scripts.creer_utilisateur:main"
 attrition-scorer = "scripts.scorer_base:main"
 attrition-requetes = "scripts.requetes:main"
 
