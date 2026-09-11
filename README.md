@@ -29,6 +29,18 @@ classique copierait `src/` dans `site-packages`, loin de `models/`.
 `[dev]` ajoute pytest, pytest-cov, httpx et ruff. Sans ce suffixe, seules les
 dépendances d'exécution sont installées.
 
+Si `pip install` échoue sur « Could not find a suitable TLS CA certificate
+bundle », c'est l'installateur PostgreSQL de Windows qui a posé une variable
+`CURL_CA_BUNDLE` pointant vers un fichier qui n'existe pas. Contournement
+immédiat :
+
+```powershell
+Remove-Item Env:\CURL_CA_BUNDLE
+```
+
+Durablement, supprimer cette variable dans les variables d'environnement
+utilisateur de Windows.
+
 ## Configuration
 
 Copier `.env.example` en `.env` et remplir les trois variables :
@@ -137,7 +149,8 @@ pytest --cov-report=html
 start htmlcov/index.html
 ```
 
-`htmlcov/` n'est pas versionné : un rapport se régénère.
+`htmlcov/` n'est pas versionné : un rapport se régénère. La CI en publie un
+à chaque exécution, téléchargeable depuis l'onglet Actions.
 
 ## Intégration continue
 
@@ -156,6 +169,9 @@ docker run -p 8000:8000 -e PORT=8000 -e API_KEY=... -e DATABASE_URL=... attritio
 
 Elle part de `python:3.13-slim`, tourne sous un utilisateur non privilégié et
 lit son port dans `PORT`, ce qu'attendent la plupart des hébergeurs.
+
+L'image a été construite et vérifiée en local : `/health` répond, `/predict`
+renvoie une prédiction et la trace arrive bien en base.
 
 La plateforme d'hébergement n'est pas encore arrêtée — voir
 [`docs/avancement.md`](docs/avancement.md).
