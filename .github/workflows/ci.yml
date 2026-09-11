@@ -17,5 +17,11 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check src/ scripts/ tests/
       - run: ruff format --check src/ scripts/ tests/
-      - run: pytest
+      - run: pytest --cov-report=html
+      - uses: actions/upload-artifact@v4
+        # always() : un rapport de couverture sert surtout quand un test casse.
+        if: always()
+        with:
+          name: couverture
+          path: htmlcov/
 

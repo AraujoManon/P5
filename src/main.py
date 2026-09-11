@@ -2,6 +2,7 @@
 
 import os
 from contextlib import asynccontextmanager
+from importlib.metadata import version
 from pathlib import Path
 
 import joblib
@@ -15,7 +16,9 @@ from src.pipeline import SEUIL_DECISION
 from src.securite import verifier_cle
 from src.schemas import EmployeEntree, PredictionSortie
 
-VERSION = "0.1.0"
+# Lue depuis pyproject.toml : cette valeur part dans chaque ligne de
+# predictions, elle ne doit pas pouvoir diverger de la version publiee.
+VERSION = version("attrition-api")
 
 FICHIER_MODELE = (
     Path(__file__).resolve().parent.parent / "models" / "attrition_model.joblib"
