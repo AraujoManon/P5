@@ -139,7 +139,7 @@ Deux choix de mise en œuvre :
 pytest
 ```
 
-34 tests, 100 % de couverture sur `src/`. La couverture est activée par défaut
+36 tests, 100 % de couverture sur `src/`. La couverture est activée par défaut
 dans `pyproject.toml`, il n'y a rien à ajouter à la commande.
 
 Pour le rapport détaillé en HTML :
@@ -193,7 +193,7 @@ Elles sont déclarées dans `pyproject.toml` et installées avec le paquet.
 ```
 src/          le service : contrat de données, pipeline, sécurité, API
 scripts/      les commandes hors service : création de base, entraînement
-tests/        34 tests, un fichier par module de src/
+tests/        36 tests, un fichier par module testé
 data/         les trois extraits CSV fournis
 models/       le modèle entraîné et ses métriques
 sql/          le schéma de la base
