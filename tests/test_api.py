@@ -3,41 +3,13 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from src.database import get_session
 from src.main import app, demarrer
 from src.pipeline import SEUIL_DECISION
 from src.schemas import EmployeEntree
+from tests.conftest import CLE
 
 # Relu depuis le schema : si l'exemple change, les tests suivent.
 EXEMPLE = EmployeEntree.model_config["json_schema_extra"]["example"]
-CLE = "cle-de-test"
-
-
-class SessionFactice:
-    """Tient lieu de session PostgreSQL et retient ce qu'on lui demande d'ecrire."""
-
-    def __init__(self):
-        self.ecritures = []
-
-    def execute(self, requete, parametres):
-        self.ecritures.append(parametres)
-
-    def commit(self):
-        pass
-
-
-@pytest.fixture
-def entetes(monkeypatch):
-    monkeypatch.setenv("API_KEY", CLE)
-    return {"X-API-Key": CLE}
-
-
-@pytest.fixture
-def session():
-    factice = SessionFactice()
-    app.dependency_overrides[get_session] = lambda: factice
-    yield factice
-    app.dependency_overrides.clear()
 
 
 def test_health_ne_demande_pas_de_cle():

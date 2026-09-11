@@ -33,3 +33,24 @@ def test_la_session_est_fermee_meme_si_la_route_echoue(monkeypatch):
         generateur.throw(RuntimeError("route en echec"))
 
     assert factice.fermee
+
+
+class SessionQuiRepond:
+    """Retient la requete recue et rend la ligne qu'on lui a confiee."""
+
+    def __init__(self, ligne):
+        self.ligne = ligne
+        self.parametres = None
+
+    def execute(self, requete, parametres):
+        self.parametres = parametres
+        return self
+
+    def first(self):
+        return self.ligne
+
+
+def test_chercher_utilisateur_interroge_la_base_sur_l_identifiant():
+    session = SessionQuiRepond(ligne="la ligne du compte")
+    assert database.chercher_utilisateur(session, "martine") == "la ligne du compte"
+    assert session.parametres == {"identifiant": "martine"}

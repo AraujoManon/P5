@@ -11,8 +11,14 @@ load_dotenv()
 
 INSERTION = text(
     "INSERT INTO predictions "
-    "(entree, probabilite, prediction, seuil_applique, version_modele) "
-    "VALUES (cast(:entree as jsonb), :probabilite, :prediction, :seuil, :version)"
+    "(entree, probabilite, prediction, seuil_applique, version_modele, appelant) "
+    "VALUES (cast(:entree as jsonb), :probabilite, :prediction, :seuil, :version, "
+    ":appelant)"
+)
+
+RECHERCHE_UTILISATEUR = text(
+    "SELECT identifiant, mot_de_passe_hache, actif "
+    "FROM utilisateurs WHERE identifiant = :identifiant"
 )
 
 # Ouvert a la premiere requete, pas a l'import : les tests tournent sans PostgreSQL.
@@ -36,8 +42,13 @@ def get_session():
         session.close()
 
 
-def enregistrer_prediction(session, entree, sortie, version_modele):
-    """Trace un appel au modele : ce qui est entre, ce qui est sorti."""
+def chercher_utilisateur(session, identifiant):
+    """La ligne du compte, ou None s'il n'existe pas."""
+    return session.execute(RECHERCHE_UTILISATEUR, {"identifiant": identifiant}).first()
+
+
+def enregistrer_prediction(session, entree, sortie, version_modele, appelant):
+    """Trace un appel au modele : ce qui est entre, ce qui est sorti, qui a demande."""
     session.execute(
         INSERTION,
         {
@@ -46,6 +57,7 @@ def enregistrer_prediction(session, entree, sortie, version_modele):
             "prediction": sortie.prediction,
             "seuil": sortie.seuil_applique,
             "version": version_modele,
+            "appelant": appelant,
         },
     )
     session.commit()
