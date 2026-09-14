@@ -116,7 +116,7 @@ jobs:
             http://localhost:8000/health
           curl --fail --silent -X POST http://localhost:8000/predict \
             -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-            --data @docs/exemple.json
+            --data @exemple.json
           test "$(psql -tA postgresql://postgres:postgres@localhost:5432/attrition \
             -c 'SELECT count(*) FROM predictions')" = 1
 
