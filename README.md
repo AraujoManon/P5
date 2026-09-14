@@ -251,7 +251,7 @@ d'environnement. Rien à changer dans le code pour passer de l'un à l'autre.
 | | Développement | Test | Production |
 |---|---|---|---|
 | Base | PostgreSQL local | base jetable `attrition_test` | PostgreSQL local, joint depuis le conteneur |
-| Variables | fichier `.env` | `DATABASE_TEST_URL`, posée par la CI | fichier `.env.docker`, passé par `--env-file` |
+| Variables | fichier `.env` | `DATABASE_TEST_URL`, posée par la CI | `.env.docker` en local, secrets de l'environnement GitHub `production` dans le pipeline |
 | Lancement | `attrition-api` | `pytest` | conteneur Docker |
 | Port | 8000 par défaut | sans objet | 8000, publié par `-p` |
 | Modèle | `models/attrition_model.joblib` | idem | embarqué dans l'image |
@@ -297,15 +297,36 @@ start htmlcov/index.html
 `htmlcov/` n'est pas versionné : un rapport se régénère. La CI en publie un
 à chaque exécution, téléchargeable depuis l'onglet Actions.
 
-## Intégration continue
+## Intégration et déploiement continus
 
-`.github/workflows/ci.yml` lance ruff puis la suite de tests à chaque push,
-sur Ubuntu et Python 3.13. Le job échoue si le formatage n'est pas conforme,
-si un test casse, ou si le rappel du modèle livré passe sous 0.75.
+`.github/workflows/ci.yml` enchaîne deux jobs à chaque push.
 
-Un service `postgres:17` est démarré le temps de l'exécution, pour les tests
-qui vérifient les contraintes du schéma. Le rapport de couverture est publié en
-artefact téléchargeable, y compris quand un test échoue.
+**`qualite`** lance ruff puis la suite de tests, sur Ubuntu et Python 3.13. Il
+échoue si le formatage n'est pas conforme, si un test casse, ou si le rappel du
+modèle livré passe sous 0.75. Un service `postgres:17` est démarré le temps de
+l'exécution, pour les tests qui vérifient les contraintes du schéma. Le rapport
+de couverture est publié en artefact téléchargeable, y compris quand un test
+échoue.
+
+**`deploiement`** ne part que si `qualite` a réussi, et seulement sur `main`.
+Il :
+
+1. vérifie que les secrets de production sont configurés ;
+2. construit l'image Docker, ce qui installe les dépendances ;
+3. la démarre avec ces secrets, face à une base PostgreSQL neuve ;
+4. appelle `/health`, puis `/predict` avec la clé d'API, et vérifie qu'une
+   ligne est arrivée dans `predictions` ;
+5. publie l'image sur GitHub Container Registry, sous
+   `ghcr.io/araujomanon/attrition-api`, étiquetée `latest` et avec le SHA du
+   commit.
+
+Une image qui ne démarre pas, ou qui ne trace pas ses prédictions, n'est jamais
+publiée.
+
+Les secrets `API_KEY` et `JWT_SECRET` sont rangés dans l'environnement GitHub
+`production` (Settings › Environments), pas dans les secrets du dépôt : seul le
+job qui déclare `environment: production` y a accès. La publication utilise le
+`GITHUB_TOKEN` fourni par GitHub, limité au droit `packages: write`.
 
 Les tags ne déclenchent rien : ils pointent sur un commit qui vient d'être
 testé.
@@ -326,7 +347,14 @@ tournerait telle quelle chez un hébergeur.
 `localhost` désigne le conteneur lui-même, pas la machine où tourne
 PostgreSQL. `.env.docker` est ignoré par git, comme `.env`.
 
-**2. Construire l'image.**
+**2. Récupérer l'image.** Celle que le pipeline a testée et publiée :
+
+```powershell
+docker pull ghcr.io/araujomanon/attrition-api:latest
+docker tag ghcr.io/araujomanon/attrition-api:latest attrition-api
+```
+
+Ou la construire depuis le dépôt :
 
 ```powershell
 docker build -t attrition-api .
