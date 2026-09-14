@@ -1,6 +1,6 @@
 FROM python:3.13-slim
 
-# Hugging Face lance le conteneur avec l'utilisateur 1000, jamais root.
+# Un utilisateur sans droits : une faille dans l'API ne donne pas la main sur le conteneur.
 RUN useradd -m -u 1000 user
 USER user
 ENV PATH="/home/user/.local/bin:$PATH"
@@ -15,6 +15,6 @@ COPY --chown=user models/ models/
 # Une installation classique copierait src/ dans site-packages, loin de models/.
 RUN pip install --no-cache-dir -e .
 
-ENV PORT=7860
-EXPOSE 7860
+ENV PORT=8000
+EXPOSE 8000
 CMD ["attrition-api"]
