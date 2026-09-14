@@ -43,7 +43,7 @@ utilisateur de Windows.
 
 ## Configuration
 
-Copier `.env.example` en `.env` et remplir les trois variables :
+Copier `.env.example` en `.env` et remplir les variables :
 
 | Variable | À quoi elle sert |
 |---|---|
@@ -58,8 +58,8 @@ Générer une clé ou un secret (la même commande sert aux deux) :
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-`.env` est dans `.gitignore` et n'est jamais versionné. En production, ces
-trois valeurs sont des variables d'environnement fournies par l'hébergeur.
+`.env` est dans `.gitignore` et n'est jamais versionné. Dans le conteneur, ces
+valeurs arrivent par `--env-file` (voir [Déploiement](#déploiement)).
 
 ## Mettre en place la base
 
@@ -250,16 +250,17 @@ d'environnement. Rien à changer dans le code pour passer de l'un à l'autre.
 
 | | Développement | Test | Production |
 |---|---|---|---|
-| Base | PostgreSQL local | base jetable `attrition_test` | base hébergée |
-| Variables | fichier `.env` | `DATABASE_TEST_URL`, posée par la CI | secrets de la plateforme |
+| Base | PostgreSQL local | base jetable `attrition_test` | PostgreSQL local, joint depuis le conteneur |
+| Variables | fichier `.env` | `DATABASE_TEST_URL`, posée par la CI | fichier `.env.docker`, passé par `--env-file` |
 | Lancement | `attrition-api` | `pytest` | conteneur Docker |
-| Port | 8000 par défaut | sans objet | imposé par `PORT` |
+| Port | 8000 par défaut | sans objet | 8000, publié par `-p` |
 | Modèle | `models/attrition_model.joblib` | idem | embarqué dans l'image |
 
 Le fichier `.env` n'existe qu'en développement. Il est lu au démarrage par
 `python-dotenv`, qui ne remplace jamais une variable déjà présente dans
-l'environnement : en production, où il n'y a pas de fichier, ce sont les
-secrets de la plateforme qui s'appliquent, et ils gagnent toujours.
+l'environnement. Le fichier n'est pas copié dans l'image : dans le conteneur,
+ce sont les variables passées au lancement qui s'appliquent. Chez un hébergeur,
+ce seraient ses secrets, sans rien changer au code.
 
 La base de test est délibérément une base à part. Le schéma commence par des
 `DROP` : le faire tourner sur la base de travail l'effacerait.
@@ -311,21 +312,41 @@ testé.
 
 ## Déploiement
 
-L'image Docker est prête :
+L'API est déployée en local, dans un conteneur Docker. Depuis septembre 2026,
+les Spaces Docker de Hugging Face sont payants et le projet accepte un
+déploiement local.
+
+Le conteneur est ce qui distingue ce déploiement du développement : l'API ne
+tourne plus depuis l'environnement Python de la machine, mais depuis une image
+figée qui embarque le code, les dépendances et le modèle. La même image
+tournerait telle quelle chez un hébergeur.
+
+**1. Préparer les variables.** Copier `.env` en `.env.docker`, puis remplacer
+`localhost` par `host.docker.internal` dans `DATABASE_URL`. Dans un conteneur,
+`localhost` désigne le conteneur lui-même, pas la machine où tourne
+PostgreSQL. `.env.docker` est ignoré par git, comme `.env`.
+
+**2. Construire l'image.**
 
 ```powershell
 docker build -t attrition-api .
-docker run -p 8000:8000 -e PORT=8000 -e API_KEY=... -e DATABASE_URL=... attrition-api
 ```
 
-Elle part de `python:3.13-slim`, tourne sous un utilisateur non privilégié et
-lit son port dans `PORT`, ce qu'attendent la plupart des hébergeurs.
+**3. Lancer le conteneur.** Docker Desktop et PostgreSQL doivent tourner.
 
-L'image a été construite et vérifiée en local : `/health` répond, `/predict`
-renvoie une prédiction et la trace arrive bien en base.
+```powershell
+docker run --rm -p 8000:8000 --env-file .env.docker attrition-api
+```
 
-La plateforme d'hébergement n'est pas encore arrêtée — voir
-[`docs/avancement.md`](docs/avancement.md).
+`--env-file` évite d'écrire la clé d'API et le mot de passe dans la commande,
+où ils resteraient dans l'historique du terminal.
+
+**4. Vérifier.** http://127.0.0.1:8000/health doit répondre, puis un appel à
+`/predict` (voir [Appeler l'API](#appeler-lapi)) doit renvoyer une prédiction
+et ajouter une ligne dans `predictions`.
+
+L'image part de `python:3.13-slim`, tourne sous un utilisateur non privilégié
+et lit son port dans `PORT`.
 
 ## Commandes disponibles
 

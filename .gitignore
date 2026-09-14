@@ -9,6 +9,8 @@ __pycache__/
 
 # Secrets — mot de passe PostgreSQL, cle d'API. JAMAIS dans git.
 .env
+.env.*
+!.env.example
 
 # Tests et rapports de couverture
 .pytest_cache/
