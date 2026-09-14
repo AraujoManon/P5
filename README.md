@@ -67,9 +67,134 @@ valeurs arrivent par `--env-file` (voir [Déploiement](#déploiement)).
 attrition-creer-base
 ```
 
-Crée la base, ses quatre tables et y charge les trois extraits CSV. La commande
-est rejouable : elle supprime et recrée les tables à chaque exécution. Le détail
-du schéma est dans [`docs/base_de_donnees.md`](docs/base_de_donnees.md).
+Crée la base, ses cinq tables et y charge les trois extraits CSV, soit 1470
+salariés. La commande est rejouable : elle supprime et recrée les tables à
+chaque exécution. Le schéma est défini dans `sql/schema.sql`.
+
+Pour remplir `predictions` avec des exemples, en faisant tourner le modèle sur
+tous les salariés de la base :
+
+```powershell
+attrition-scorer
+```
+
+## Schéma de la base
+
+PostgreSQL 17, base `attrition`. Cinq tables : trois pour le jeu de données,
+une pour tracer les appels au modèle, une pour les comptes d'accès à l'API.
+
+```mermaid
+erDiagram
+    employes_sirh ||--|| employes_sondage : "id_employee = code_sondage"
+    employes_sirh ||--|| employes_eval : "id_employee"
+
+    employes_sirh {
+        integer id_employee PK
+        integer age
+        text    genre
+        integer revenu_mensuel
+        text    statut_marital
+        text    departement
+        text    poste
+        integer nombre_experiences_precedentes
+        integer nombre_heures_travailless
+        integer annee_experience_totale
+        integer annees_dans_l_entreprise
+        integer annees_dans_le_poste_actuel
+    }
+
+    employes_sondage {
+        integer code_sondage PK,FK
+        text    a_quitte_l_entreprise
+        integer nombre_participation_pee
+        integer nb_formations_suivies
+        integer nombre_employee_sous_responsabilite
+        integer distance_domicile_travail
+        integer niveau_education
+        text    domaine_etude
+        text    ayant_enfants
+        text    frequence_deplacement
+        integer annees_depuis_la_derniere_promotion
+        integer annes_sous_responsable_actuel
+    }
+
+    employes_eval {
+        text    eval_number PK
+        integer id_employee FK,UK
+        integer satisfaction_employee_environnement
+        integer satisfaction_employee_nature_travail
+        integer satisfaction_employee_equipe
+        integer satisfaction_employee_equilibre_pro_perso
+        integer note_evaluation_precedente
+        integer note_evaluation_actuelle
+        integer niveau_hierarchique_poste
+        text    heure_supplementaires
+        numeric augementation_salaire_precedente
+    }
+
+    predictions {
+        bigserial   id PK
+        timestamptz horodatage
+        jsonb       entree
+        numeric     probabilite
+        text        prediction
+        numeric     seuil_applique
+        text        version_modele
+        text        appelant
+    }
+
+    utilisateurs {
+        serial      id PK
+        text        identifiant UK
+        text        mot_de_passe_hache
+        boolean     actif
+        timestamptz cree_le
+    }
+```
+
+### Relations et contraintes
+
+| Table | Contrainte | Pourquoi |
+|---|---|---|
+| `employes_sondage` | `code_sondage` clé primaire et étrangère vers `employes_sirh` | un sondage appartient à un salarié existant, et un seul |
+| `employes_eval` | `id_employee` clé étrangère et `UNIQUE` | une évaluation par salarié, rattachée à un salarié existant |
+| toutes les colonnes des données | `NOT NULL` | un CSV incomplet échoue au chargement au lieu d'entrer à moitié |
+| `predictions` | `CHECK (probabilite BETWEEN 0 AND 1)` | une probabilité hors bornes signale un bug, pas une donnée |
+| `predictions` | `CHECK (prediction IN ('Oui', 'Non'))` | seules deux décisions existent |
+| `utilisateurs` | `identifiant` `UNIQUE` | deux comptes ne peuvent pas porter le même nom |
+
+`predictions` n'a pas de clé étrangère vers `employes_sirh` : l'API répond sur
+des salariés qui ne sont pas forcément en base, un candidat ou un profil
+hypothétique saisi par les RH. `utilisateurs` ne référence rien non plus : un
+compte d'accès n'est pas un salarié de l'entreprise.
+
+### Choix de modélisation
+
+- **Trois tables plutôt qu'une.** Les données viennent de trois systèmes
+  distincts. Chaque table garde la clé primaire de sa source. Les recoller en
+  une table large aurait effacé cette origine.
+- **`eval_number` en texte.** Le système d'évaluation numérote `E_1`, `E_2`…
+  La table garde l'identifiant tel qu'il arrive, et `id_employee` porte la clé
+  étrangère.
+- **L'entrée des prédictions en `jsonb`.** Les 26 champs sont déjà décrits
+  dans `src/schemas.py`. Les redéclarer en colonnes ferait deux endroits à
+  modifier à chaque évolution. Le `jsonb` reste interrogeable.
+- **`augementation_salaire_precedente` en `numeric`.** Le CSV contient
+  `"11 %"`. La valeur est nettoyée à l'insertion pour que les calculs n'aient
+  pas à le refaire.
+- **`mot_de_passe_hache`**, jamais `mot_de_passe` : seul le hachage bcrypt est
+  stocké. `actif` coupe un accès sans supprimer la ligne, et les prédictions
+  déjà tracées continuent de désigner un compte qui existe.
+- **`appelant` sur `predictions`** : le compte qui a demandé, ou `service` pour
+  la clé d'API. Pour des données RH, savoir qu'une décision a été prise ne
+  suffit pas, il faut savoir par qui.
+
+### Volume
+
+1470 lignes par table de données. `predictions` est la seule table qui grossit
+avec l'usage : elle ne fait qu'ajouter des lignes. Un index sur `horodatage`
+(ordre décroissant) garde rapides les requêtes de suivi, qui portent presque
+toujours sur les appels récents.
 
 ## Entraîner le modèle
 
@@ -80,6 +205,38 @@ attrition-entrainer
 Produit `models/attrition_model.joblib` et `models/metrics.json`. Le dépôt
 contient déjà un modèle entraîné : cette commande ne sert que si les données
 ou le pipeline changent.
+
+### Le modèle
+
+Il estime la probabilité qu'un salarié quitte l'entreprise. Il a été entraîné
+sur 1470 salariés, dont 237 départs (16 %). Ce déséquilibre est la difficulté
+centrale du jeu de données.
+
+Le pipeline tient en un seul objet scikit-learn, sauvegardé dans le `.joblib` :
+
+| Étape | Rôle |
+|---|---|
+| `preparation` | nettoyage, encodage ordinal, 5 variables calculées |
+| `encodage` | One Hot sur les 6 colonnes nominales |
+| `undersampler` | rééquilibrage des classes, à l'entraînement seulement |
+| `rf` | `RandomForestClassifier`, graine 42, hyperparamètres par défaut |
+
+Tout est dans un seul objet pour que l'API applique exactement les mêmes
+transformations que l'entraînement.
+
+**Seuil de décision : 0.40**, et non 0.50. Rater un départ coûte environ dix
+fois plus cher qu'une fausse alerte. Abaisser le seuil détecte plus de départs,
+au prix de plus de fausses alertes.
+
+**Performance** : rappel moyen de 0.83 (écart-type 0.06) en validation croisée
+à 5 plis. La validation croisée fait foi, parce que le jeu de test ne contient
+que 47 départs et qu'une mesure unique sur si peu de cas est instable. Sur ce
+jeu de test, 37 départs sur 47 sont détectés. `tests/test_modele.py` fait
+échouer la CI si le rappel passe sous 0.75.
+
+**Limites** : peu de données, aucune explication de la prédiction et aucun
+suivi de dérive pour l'instant. `note_evaluation_actuelle` ne vaut que 3 ou 4
+dans les données : sur 1 ou 2, le modèle extrapole.
 
 ## Lancer l'API
 
@@ -97,7 +254,7 @@ L'API écoute sur le port 8000, ou sur celui que donne la variable `PORT`.
 Avec la clé de service :
 
 ```powershell
-$corps = Get-Content docs/exemple.json -Raw
+$corps = Get-Content exemple.json -Raw
 Invoke-RestMethod -Uri http://127.0.0.1:8000/predict -Method Post `
   -Headers @{ "X-API-Key" = $env:API_KEY } `
   -ContentType "application/json" -Body $corps
@@ -124,8 +281,21 @@ Réponse :
 }
 ```
 
-Le détail des routes, des champs attendus et des codes d'erreur est dans
-[`docs/api.md`](docs/api.md).
+La documentation interactive, sur `/docs` (Swagger) ou `/redoc`, décrit
+chaque route, les 26 champs avec leurs bornes et leurs modalités, et donne un
+exemple de requête prêt à envoyer. Elle est générée à partir des mêmes classes
+Pydantic que celles qui valident les requêtes : elle ne peut pas diverger du
+code.
+
+| Code | Quand |
+|---|---|
+| 200 | prédiction rendue et tracée en base |
+| 401 | aucune authentification, jeton invalide ou expiré, clé incorrecte |
+| 422 | champ manquant, hors bornes, modalité inconnue ou champ en trop |
+| 500 | `API_KEY` ou `JWT_SECRET` absent du serveur, ou trace en base impossible |
+
+Une prédiction qui ne peut pas être tracée échoue au lieu d'être rendue : pour
+des données RH, une décision sans trace n'est pas acceptable.
 
 ## Authentification et gestion des accès
 
@@ -398,15 +568,14 @@ tests/        63 tests, un fichier par module testé
 data/         les trois extraits CSV fournis
 models/       le modèle entraîné et ses métriques
 sql/          le schéma de la base
-docs/         la documentation et le journal de bord
+exemple.json  un corps de requête valide pour /predict
 ```
 
 ## Documentation
 
-| Fichier | Contenu |
-|---|---|
-| [`docs/api.md`](docs/api.md) | routes, champs attendus, codes d'erreur |
-| [`docs/modele.md`](docs/modele.md) | données, pipeline, mesures, limites |
-| [`docs/features.md`](docs/features.md) | le contrat de données en détail |
-| [`docs/base_de_donnees.md`](docs/base_de_donnees.md) | schéma PostgreSQL |
-| [`docs/avancement.md`](docs/avancement.md) | journal de bord du projet |
+- documentation interactive de l'API : `/docs` (Swagger) et `/redoc`, une fois
+  le service lancé
+- contrat de données : `src/schemas.py`, qui valide chaque requête et génère
+  la documentation interactive
+- schéma SQL : `sql/schema.sql`
+- métriques du modèle livré : `models/metrics.json`
