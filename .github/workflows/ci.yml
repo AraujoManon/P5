@@ -48,3 +48,85 @@ jobs:
           name: couverture
           path: htmlcov/
 
+
+  deploiement:
+    # Ne part que si les tests sont passes, et seulement depuis main : une
+    # branche de travail ne publie jamais d'image.
+    needs: qualite
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    # Les secrets de production vivent dans l'environnement GitHub
+    # `production`, pas dans ceux du depot : seul ce job y a acces.
+    environment: production
+
+    # GITHUB_TOKEN ne recoit que le droit de publier des paquets.
+    permissions:
+      contents: read
+      packages: write
+
+    # Une base neuve pour verifier que l'image construite trace bien ses
+    # predictions. Le mot de passe est celui d'une base jetable, pas un secret.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: attrition
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      IMAGE: ghcr.io/araujomanon/attrition-api
+      API_KEY: ${{ secrets.API_KEY }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verifie que les secrets sont configures
+        run: |
+          if [ -z "$API_KEY" ] || [ -z "$JWT_SECRET" ]; then
+            echo "::error::API_KEY et JWT_SECRET doivent etre definis dans l'environnement production"
+            exit 1
+          fi
+
+      # L'installation des dependances se fait ici, dans le docker build.
+      - name: Construit l'image
+        run: docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
+
+      - name: Cree le schema
+        run: psql -v ON_ERROR_STOP=1 postgresql://postgres:postgres@localhost:5432/attrition -f sql/schema.sql
+
+      - name: Demarre le conteneur
+        run: |
+          docker run -d --name api --network host \
+            -e API_KEY -e JWT_SECRET \
+            -e DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/attrition \
+            "$IMAGE:${{ github.sha }}"
+
+      - name: Verifie l'API deployee
+        run: |
+          curl --fail --silent --retry 15 --retry-all-errors --retry-delay 2 \
+            http://localhost:8000/health
+          curl --fail --silent -X POST http://localhost:8000/predict \
+            -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
+            --data @docs/exemple.json
+          test "$(psql -tA postgresql://postgres:postgres@localhost:5432/attrition \
+            -c 'SELECT count(*) FROM predictions')" = 1
+
+      - name: Journaux du conteneur
+        if: failure()
+        run: docker logs api
+
+      # On ne publie qu'une image qui a demarre et repondu.
+      - name: Publie l'image
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
