@@ -441,7 +441,7 @@ La base de test est délibérément une base à part. Le schéma commence par de
 pytest
 ```
 
-63 tests, 100 % de couverture sur `src/`. La couverture est activée par défaut
+65 tests, 100 % de couverture sur `src/`. La couverture est activée par défaut
 dans `pyproject.toml`, il n'y a rien à ajouter à la commande.
 
 Douze d'entre eux parlent à un vrai PostgreSQL : ils vérifient qu'une
@@ -564,7 +564,7 @@ Elles sont déclarées dans `pyproject.toml` et installées avec le paquet.
 ```
 src/          le service : contrat de données, pipeline, sécurité, API
 scripts/      les commandes hors service : création de base, entraînement
-tests/        63 tests, un fichier par module testé
+tests/        65 tests, un fichier par module testé
 data/         les trois extraits CSV fournis
 models/       le modèle entraîné et ses métriques
 sql/          le schéma de la base

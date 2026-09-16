@@ -21,6 +21,9 @@ RACINE = Path(__file__).resolve().parent.parent
 FICHIER_MODELE = RACINE / "models" / "attrition_model.joblib"
 VERSION = version("attrition-api")
 
+# Ce que le scorer ecrit dans `appelant` : ni un compte, ni la cle de service.
+APPELANT = "scorer"
+
 REQUETE_EMPLOYES = """
     SELECT s.*, so.*, e.*
     FROM employes_sirh s
@@ -30,6 +33,21 @@ REQUETE_EMPLOYES = """
 """
 
 
+def fabriquer_lignes(entrees, probabilites):
+    """Une ligne de `predictions` par employe, prete pour INSERTION."""
+    return [
+        {
+            "entree": json.dumps(entree, ensure_ascii=False),
+            "probabilite": round(float(p), 4),
+            "prediction": "Oui" if p >= SEUIL_DECISION else "Non",
+            "seuil": SEUIL_DECISION,
+            "version": VERSION,
+            "appelant": APPELANT,
+        }
+        for entree, p in zip(entrees.to_dict("records"), probabilites)
+    ]
+
+
 def main():
     fabrique = fabrique_session()
     with fabrique() as session:
@@ -37,16 +55,7 @@ def main():
         entrees = df[COLONNES_ENTREE]
         probabilites = joblib.load(FICHIER_MODELE).predict_proba(entrees)[:, 1]
 
-        lignes = [
-            {
-                "entree": json.dumps(entree, ensure_ascii=False),
-                "probabilite": round(float(p), 4),
-                "prediction": "Oui" if p >= SEUIL_DECISION else "Non",
-                "seuil": SEUIL_DECISION,
-                "version": VERSION,
-            }
-            for entree, p in zip(entrees.to_dict("records"), probabilites)
-        ]
+        lignes = fabriquer_lignes(entrees, probabilites)
         session.execute(INSERTION, lignes)
         session.commit()
 
