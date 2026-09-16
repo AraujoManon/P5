@@ -78,6 +78,19 @@ tous les salariés de la base :
 attrition-scorer
 ```
 
+Les lignes écrites portent `appelant = scorer` : ni un compte, ni la clé de
+service. On distingue ainsi un score calculé en lot d'une prédiction demandée
+par un appelant réel.
+
+`data/exemples_predictions.csv` contient vingt de ces lignes, entrées et
+sorties du modèle comprises, pour qui veut voir ce que la table contient sans
+installer la base. Le fichier se régénère :
+
+```powershell
+$requete = "SELECT * FROM predictions WHERE appelant = 'scorer' ORDER BY id DESC LIMIT 20"
+psql -U postgres -d attrition -c "\copy ($requete) TO 'data/exemples_predictions.csv' CSV HEADER"
+```
+
 ## Schéma de la base
 
 PostgreSQL 17, base `attrition`. Cinq tables : trois pour le jeu de données,
@@ -366,6 +379,7 @@ Le cycle de vie d'une donnée, de son arrivée à son exploitation.
 | Entraînement | `attrition-entrainer` produit le modèle et ses métriques | `models/` |
 | Prédiction | l'API valide, transforme, prédit | en mémoire |
 | Traçabilité | chaque appel est écrit avec son entrée complète | table `predictions` |
+| Extraction | un échantillon de la table, exporté pour consultation | `data/exemples_predictions.csv` |
 
 Trois principes gouvernent ce découpage.
 
@@ -565,7 +579,7 @@ Elles sont déclarées dans `pyproject.toml` et installées avec le paquet.
 src/          le service : contrat de données, pipeline, sécurité, API
 scripts/      les commandes hors service : création de base, entraînement
 tests/        65 tests, un fichier par module testé
-data/         les trois extraits CSV fournis
+data/         les trois extraits CSV fournis, et un extrait des prédictions
 models/       le modèle entraîné et ses métriques
 sql/          le schéma de la base
 exemple.json  un corps de requête valide pour /predict
