@@ -2,9 +2,11 @@ name: CI
 
 on:
   push:
-    # Un tag pointe sur un commit deja teste : sans ce filtre, `git push
-    # --follow-tags` lance deux fois la meme CI.
-    tags-ignore: ['**']
+    # Toutes les branches, aucun tag. Un tag pointe sur un commit deja teste :
+    # sans ce filtre, `git push --follow-tags` lance deux fois la meme CI.
+    # `tags-ignore` seul ne suffit pas : un `on.push` qui ne parle que de tags
+    # ne se declenche sur aucune branche, et la CI ne tournait plus du tout.
+    branches: ['**']
   workflow_dispatch:
 
 jobs:
